@@ -146,9 +146,7 @@ function compileList({ name, raw }, compiler, writer, options = {}) {
 /******************************************************************************/
 
 async function useLists(lists, options = {}) {
-    if ( useLists.promise !== null ) {
-        throw new Error('Pending useLists() operation');
-    }
+    let currentPromise = null;
 
     // Remove all filters
     snfe.reset();
@@ -160,6 +158,10 @@ async function useLists(lists, options = {}) {
     let compiler = null;
 
     const consumeList = list => {
+        // Bail if the promise has been replaced by another call to useLists()
+        if ( useLists.promise !== currentPromise )
+            return;
+
         let { compiled } = list;
         if ( typeof compiled !== 'string' || compiled === '' ) {
             const writer = new CompiledListWriter();
@@ -178,13 +180,16 @@ async function useLists(lists, options = {}) {
         promises.push(promise.then(list => consumeList(list)));
     }
 
-    useLists.promise = Promise.all(promises);
-    await useLists.promise;
-    useLists.promise = null;
+    currentPromise = useLists.promise = Promise.all(promises);
+    await currentPromise;
 
-    // Commit changes
-    snfe.freeze();
-    snfe.optimize();
+    if ( useLists.promise === currentPromise ) {
+      useLists.promise = null;
+
+      // Commit changes
+      snfe.freeze();
+      snfe.optimize();
+    }
 }
 
 useLists.promise = null;
